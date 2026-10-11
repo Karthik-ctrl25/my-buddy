@@ -186,7 +186,10 @@ async function startAudio() {
     requestAnimationFrame(loop);
   })();
 }
-startAudio().catch(e => console.error('audio capture failed', e));
+function status(t) { say(t); setTimeout(() => { if (mode === 'idle') say(null); }, 4000); }
+startAudio()
+  .then(() => setTimeout(() => status('Audio OK ✅'), 5000))
+  .catch(e => { console.error('audio capture failed', e); setTimeout(() => status('Audio FAILED ❌ ' + e.name), 5000); });
 
 // ================= ANIMATION LOOP =================
 const baseTarget = () => (TASKBAR_AUTOHIDE ? (tbShown ? TASKBAR_H : 0) : TB());  // ground height above screen bottom
