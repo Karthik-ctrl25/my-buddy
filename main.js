@@ -44,11 +44,28 @@ function createWindow() {
 function pollTaskbar() {
   const b = screen.getPrimaryDisplay().bounds;
   const p = screen.getCursorScreenPoint();
+
   const fromBottom = b.y + b.height - p.y;
+
   let next = tbShown;
-  if (fromBottom <= 2) next = true;
-  else if (fromBottom > TASKBAR_H + 6) next = false;
-  if (next !== tbShown) { tbShown = next; send('taskbar', tbShown); }
+
+  // Detect the cursor touching the bottom edge
+  if (fromBottom <= 3) {
+    next = true;
+  }
+  // Keep the taskbar visible while the cursor is within its area
+  else if (fromBottom <= TASKBAR_H + 10) {
+    next = true;
+  }
+  // Hide the buddy's taskbar state when the cursor moves away
+  else if (fromBottom > TASKBAR_H + 30) {
+    next = false;
+  }
+
+  if (next !== tbShown) {
+    tbShown = next;
+    send('taskbar', tbShown);
+  }
 }
 
 // Windows pulls the taskbar above other always-on-top windows when you use it,

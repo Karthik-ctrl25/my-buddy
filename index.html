@@ -37,9 +37,9 @@ const AW = 220;                               // actor width (matches CSS)
 // --- taskbar ---
 const TASKBAR_AUTOHIDE = true;                // true = your taskbar auto-hides | false = always visible
 const TASKBAR_H = 48;                         // taskbar height when it pops up (same as in main.js)
-const SIT_DROP = 62;                          // legs hang over the taskbar when it is shown
-const SIT_DROP_HIDDEN = 40;                   // taskbar hidden: how far he sinks below the screen bottom
-                                              //   (bigger = lower / more legs cut off)
+const SIT_DROP = 40;                          // taskbar shown: legs hang this far over it. He rises (TASKBAR_H - SIT_DROP) px.
+                                              //   keep this BELOW TASKBAR_H, bigger = lower & rises less
+const SIT_DROP_HIDDEN = 25;                    // taskbar hidden: 0 = feet rest on the screen bottom
 
 const $ = id => document.getElementById(id);
 const actor = $('actor'), ch = $('char'), bubble = $('bubble'), msg = $('msg'), btns = $('btns');
@@ -230,7 +230,7 @@ function animate(now) {
   }
   drop += (wantDrop - drop) * Math.min(1, dt * 10);
 
-  actor.style.bottom = Math.max(0, base - drop) + 'px';
+  actor.style.bottom = (base - drop) + 'px';
   actor.classList.toggle('sit', state === 'sit');
   actor.style.opacity = hidden && mode === 'idle' ? 0 : 1;
   ch.style.transform = `translateY(${-up}px) rotate(${tilt}deg) scaleX(${f})`;
