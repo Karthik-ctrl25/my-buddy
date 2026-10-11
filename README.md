@@ -1,10 +1,54 @@
-# My Buddy
-Desktop companion for Windows (Electron): reminds me to drink water and dances when music plays.
+# 🧍 My Buddy
 
-## Run
+A tiny Windows desktop companion that sits on your taskbar, reminds you to drink water, greets you when you wake your laptop, and dances to music.
+
+Built with Electron, Node.js, JavaScript, and custom character animations.
+
+## ✨ Features
+
+- 💧 Water reminders with interactive responses
+- 👋 Greetings on startup, unlock, and wake from sleep
+- 🎵 Music detection with dancing animations
+- 🪑 Sits on the taskbar
+- 🖱️ Transparent, click-through window
+- 🚀 Automatic startup with Windows
+
+## 🛠️ Tech Stack
+
+- Electron
+- Node.js
+- JavaScript
+- HTML & CSS
+
+## 🚀 Getting Started
+
+**Requirements:** Windows 10/11 and Node.js.
+
+```bash
 npm install
 npm start
+```
 
-## Build exe (auto-starts on login)
+## 📦 Build for Windows
+
+```bash
 npm run pack
-Run dist/MyBuddy-win32-x64/MyBuddy.exe once.
+```
+
+## ⌨️ Keyboard Shortcuts
+
+| Shortcut | Action |
+|---|---|
+| `Ctrl + Alt + B` | Send Buddy away |
+| `Ctrl + Alt + H` | Hide/show Buddy |
+| `Ctrl + Alt + M` | Toggle music dancing |
+
+## 🤖 Built with AI
+
+Developed with assistance from Claude, alongside my own contributions to the idea, behaviour design, testing, debugging, and packaging.
+
+## 📌 Future Improvements
+
+- More animations and character poses
+- Customizable reminder settings
+- Assistant panel with notes and quick actions
