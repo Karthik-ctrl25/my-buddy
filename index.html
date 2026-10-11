@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  html, body { margin:0; width:100%; height:100%; background:transparent; overflow:hidden; font-family:'Segoe UI',sans-serif; }
+  #actor { position:absolute; bottom:0; left:0; width:220px; display:flex; flex-direction:column;
+           align-items:center; pointer-events:none; will-change:transform; }
+  #bubble { display:none; pointer-events:auto; background:#fff; border:3px solid #222; border-radius:16px;
+            padding:8px 12px; text-align:center; font-weight:700; font-size:14px; margin-bottom:6px; max-width:210px; }
+  #btns { display:none; }
+  #bubble button { margin:6px 4px 0; padding:5px 10px; border:2px solid #222; border-radius:10px;
+                   background:#ffd400; font-weight:700; cursor:pointer; }
+  #char { pointer-events:auto; user-select:none; transform-origin:50% 100%; }
+  #actor.sit #char { pointer-events:none; }  /* sitting never blocks clicks */
+</style>
+</head>
+<body>
+<div id="actor">
+  <div id="bubble"><div id="msg"></div><div id="btns">
+    <button id="yes">YES</button><button id="later">Remind me later</button></div></div>
+  <img id="char" src="assets/front.png" draggable="false">
+</div>
+
+<script>
+// ================= CONFIG (change things here) =================
+const TEST_MODE = false;                      // true = reminders every 12 s (testing) | false = normal
+const REMIND_MIN = TEST_MODE ? 0.2 : 20;      // normal: every 20 min (use 10 for 10 min)
+const SNOOZE_MIN = TEST_MODE ? 0.2 : 5;       // "later" / ignored => ask again after this
+const STAY_MS = 90000;                        // how long the reminder waits for an answer
+const CHAR_H = 130;                           // buddy height in px (smaller = smaller buddy)
+const RUN_SPEED = 450;                        // px/sec running (lower = slower)
+const WANDER_SPEED = 300;                     // px/sec wandering while dancing
+const SIT_FROM_RIGHT_PX = 235;                // sitting spot, distance from right edge (bigger = more left)
+const AW = 220;                               // actor width (matches CSS)
+
+// --- taskbar ---
+const TASKBAR_AUTOHIDE = true;                // true = your taskbar auto-hides | false = always visible
+const TASKBAR_H = 48;                         // taskbar height when it pops up (same as in main.js)
+const SIT_DROP = 62;                          // legs hang over the taskbar when it is shown
+const SIT_DROP_HIDDEN = 40;                   // taskbar hidden: how far he sinks below the screen bottom
+                                              //   (bigger = lower / more legs cut off)
+
+const $ = id => document.getElementById(id);
+const actor = $('actor'), ch = $('char'), bubble = $('bubble'), msg = $('msg'), btns = $('btns');
+ch.style.height = CHAR_H + 'px';
+const W = () => window.innerWidth;
+const TB = () => Math.max(0, screen.height - screen.availHeight);          // taskbar height (always-visible mode)
+const sitX = () => W() - SIT_FROM_RIGHT_PX / window.devicePixelRatio - AW / 2;
+
+// ---------- poses (missing files fall back to front.png) ----------
+const loaded = new Set(['front', 'back']);
+['sit','hand_up','hands_up','leg_up','disco','cup_hold','cup_drink','thumbs_up','run1','run2'].forEach(n => {
+  const i = new Image(); i.onload = () => loaded.add(n); i.src = `assets/${n}.png`;
+});
+const DANCE = ['hand_up','hands_up','leg_up','disco','back'];
+let cur = '';
+function setImg(n) { if (!loaded.has(n)) n = 'front'; if (n !== cur) { cur = n; ch.src = `assets/${n}.png`; } }
+
+// ---------- click-through ----------
+let ctState = null;
+function ct(on) { if (on !== ctState) { ctState = on; window.api.clickThrough(on); } }
+[ch, bubble].forEach(el => {
+  el.addEventListener('mouseenter', () => { if (state !== 'run' && state !== 'sit') ct(false); });
+  el.addEventListener('mouseleave', () => ct(true));
+});
+
+// ---------- state ----------
+let x = sitX(), target = null, speed = 0, face = 1, resolveMove = null;
+let state = 'sit', mode = 'idle', prio = 0, token = 0, hidden = false, tbShown = false;
+let answer = null, remindTimer = null, musicEnabled = true, musicOn = false, musicDismissed = false;
+let energy = 0, loudSince = null, silentSince = null;
+
+const w = (ms, ok) => new Promise((res, rej) => setTimeout(() => (ok() ? res() : rej()), ms));
+function moveTo(tx, sp, ok) {
+  return new Promise((res, rej) => {
+    target = tx; speed = sp; state = 'run'; face = tx > x ? 1 : -1;
+    resolveMove = () => (ok() ? res() : rej());
+  });
+}
+function say(t, withBtns = false) {
+  bubble.style.display = t ? 'block' : 'none';
+  msg.textContent = t || '';
+  btns.style.display = withBtns ? 'block' : 'none';
+  if (!t) ct(true);
+}
+function flash(t) {                               // short message while idle (e.g. music on/off)
+  if (mode !== 'idle') return;
+  say(t);
+  setTimeout(() => { if (mode === 'idle') say(null); }, 1800);
+}
+function reset() { target = null; state = 'sit'; mode = 'idle'; prio = 0; x = sitX(); say(null); ct(true); }
+
+function start(name, p, fn) {
+  if (hidden && name !== 'remind') return false;     // hidden: only water reminders may appear
+  if (mode !== 'idle' && p <= prio) return false;    // only higher priority can interrupt
+  const my = ++token; mode = name; prio = p;
+  fn(() => my === token).then(() => { if (my === token) reset(); }).catch(() => {});
+  return true;
+}
+function dismissNow() {
+  if (mode === 'remind' && answer) { answer('later'); return; }
+  if (mode === 'music') { musicDismissed = true; return; }   // scene sees the flag and goes back to sit
+  if (mode !== 'idle') { token++; reset(); }
+}
+
+// ================= SCENES (all inside the small taskbar strip) =================
+async function greet(ok) {                       // run to the far left end, wave, run back and sit
+  await moveTo(10, RUN_SPEED, ok);
+  state = 'wave'; say('Hey bro! 👋'); await w(2200, ok); say(null);
+  await moveTo(sitX(), RUN_SPEED, ok);
+}
+
+async function remind(ok) {                      // water reminder: cup + sipping
+  await moveTo(W() * 0.5 - AW / 2, RUN_SPEED, ok);
+  state = 'cup'; say('Hey Karthik! Time for water 💧', true);
+  const a = await Promise.race([new Promise(r => (answer = r)), w(STAY_MS, ok).then(() => 'timeout')]);
+  answer = null; say(null);
+  if (a === 'yes') { state = 'thumb'; await w(1800, ok); scheduleRemind(REMIND_MIN); }
+  else scheduleRemind(SNOOZE_MIN);
+  await moveTo(sitX(), RUN_SPEED, ok);
+}
+
+async function music(ok) {                       // get up, dance, wander, sit again when music stops
+  await moveTo(W() * 0.5 - AW / 2, RUN_SPEED, ok);
+  state = 'dance';
+  let since = performance.now();
+  while (musicOn && !musicDismissed && musicEnabled) {
+    await w(200, ok);
+    if (performance.now() - since > 9000) {
+      since = performance.now();
+      await moveTo(20 + Math.random() * (sitX() - 20), WANDER_SPEED, ok);
+      state = 'dance';
+    }
+  }
+  await moveTo(sitX(), RUN_SPEED, ok);
+}
+
+function scheduleRemind(min) {
+  clearTimeout(remindTimer);
+  remindTimer = setTimeout(() => start('remind', 3, remind), min * 60000);
+}
+scheduleRemind(REMIND_MIN);
+
+$('yes').onclick = () => answer && answer('yes');
+$('later').onclick = () => answer && answer('later');
+ch.onclick = () => { if (mode === 'music' || mode === 'greet') dismissNow(); };
+
+window.api.onCmd((name, arg) => {
+  if (name === 'greet') start('greet', 2, greet);
+  else if (name === 'remind') start('remind', 3, remind);
+  else if (name === 'dismiss') dismissNow();
+  else if (name === 'taskbar') tbShown = arg;     // auto-hide taskbar popped up / hid
+  else if (name === 'hide-toggle') { hidden = !hidden; if (hidden && (mode === 'music' || mode === 'greet')) dismissNow(); }
+  else if (name === 'music') {
+    musicEnabled = arg;
+    if (!arg && mode === 'music') musicDismissed = true;
+    flash(arg ? 'Music dance ON 🎵' : 'Music dance OFF 🔇');
+  }
+});
+
+// ================= AUDIO -> music detection =================
+async function startAudio() {
+  const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+  stream.getVideoTracks().forEach(tr => tr.stop());
+  const ctx = new AudioContext();
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 256;
+  ctx.createMediaStreamSource(stream).connect(analyser);
+  const data = new Uint8Array(analyser.frequencyBinCount);
+  (function loop() {
+    analyser.getByteFrequencyData(data);
+    let bass = 0;
+    for (let i = 0; i < 8; i++) bass += data[i];
+    energy += (bass / 8 / 255 - energy) * 0.25;
+
+    const now = performance.now();
+    if (energy > 0.15) {
+      silentSince = null; if (loudSince === null) loudSince = now;
+      if (now - loudSince > 1500) musicOn = true;            // sustained sound = music
+    } else {
+      loudSince = null; if (silentSince === null) silentSince = now;
+      if (now - silentSince > 5000) { musicOn = false; musicDismissed = false; }  // song ended
+    }
+    if (musicOn && musicEnabled && !musicDismissed && mode === 'idle') start('music', 1, music);
+    requestAnimationFrame(loop);
+  })();
+}
+startAudio().catch(e => console.error('audio capture failed', e));
+
+// ================= ANIMATION LOOP =================
+const baseTarget = () => (TASKBAR_AUTOHIDE ? (tbShown ? TASKBAR_H : 0) : TB());  // ground height above screen bottom
+let last = performance.now(), t = 0, lastSwap = 0, idx = 0, drop = 0, base = baseTarget();
+function animate(now) {
+  const dt = Math.min((now - last) / 1000, 0.05); last = now; t += dt * 11;
+
+  if (target !== null) {
+    const step = speed * dt, d = target - x;
+    if (Math.abs(d) <= step) { x = target; target = null; const r = resolveMove; resolveMove = null; if (r) r(); }
+    else x += Math.sign(d) * step;
+  }
+  if (mode === 'idle' || state === 'run') ct(true);
+
+  const e = energy > 0.15 ? energy : 0;
+  let up = 0, tilt = 0, f = 1;
+  if (state === 'run') {
+    const frames = loaded.has('run1') && loaded.has('run2') ? ['run1', 'run2'] : ['leg_up', 'front'];
+    if (now - lastSwap > 160) { idx++; lastSwap = now; }
+    setImg(frames[idx % 2]); up = Math.abs(Math.sin(t * 0.8)) * 8; f = face;
+  } else if (state === 'dance') {
+    const list = DANCE.filter(n => loaded.has(n));
+    if (now - lastSwap > 450) { idx++; lastSwap = now; }
+    setImg(list[idx % list.length]); up = Math.abs(Math.sin(t)) * e * 20; tilt = Math.sin(t) * e * 8;
+  } else if (state === 'cup') {
+    if (now - lastSwap > 1200) { idx++; lastSwap = now; }
+    setImg(idx % 2 ? 'cup_drink' : 'cup_hold');
+  } else if (state === 'wave') setImg('hand_up');
+  else if (state === 'thumb') setImg('thumbs_up');
+  else setImg('sit');                              // idle: sitting (falls back to front.png)
+
+  // ground follows the taskbar (rises when it pops up, sinks when it hides)
+  base += (baseTarget() - base) * Math.min(1, dt * 8);
+
+  // legs hang down when sit.png exists: over the taskbar if shown, off the screen edge if hidden
+  let wantDrop = 0;
+  if (state === 'sit' && loaded.has('sit')) {
+    wantDrop = TASKBAR_AUTOHIDE
+      ? (tbShown ? SIT_DROP : SIT_DROP_HIDDEN)
+      : Math.min(SIT_DROP, Math.max(0, TB() - 4));
+  }
+  drop += (wantDrop - drop) * Math.min(1, dt * 10);
+
+  actor.style.bottom = Math.max(0, base - drop) + 'px';
+  actor.classList.toggle('sit', state === 'sit');
+  actor.style.opacity = hidden && mode === 'idle' ? 0 : 1;
+  ch.style.transform = `translateY(${-up}px) rotate(${tilt}deg) scaleX(${f})`;
+  actor.style.transform = `translateX(${x}px)`;
+  requestAnimationFrame(animate);
+}
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
