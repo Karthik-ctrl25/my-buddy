@@ -9,6 +9,7 @@ app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
 const TASKBAR_H = 48;   // height of the Windows taskbar when it pops up (DIP)
 
 let win, tray, lastGreet = 0, musicEnabled = true, tbShown = false;
+let lastCx = null, lastCy = null;
 
 if (!app.requestSingleInstanceLock()) {
   console.log('Another MyBuddy is already running. Quitting this one. Run stop-buddy.bat first.');
@@ -24,12 +25,16 @@ function greet() {
 
 function createWindow() {
   const b = screen.getPrimaryDisplay().bounds;
-  const width = Math.round(b.width * 0.45), height = 320;   // small strip, bottom-right only
+  const width = Math.round(b.width * 0.45), height = 420;   // small strip, bottom-right only (taller for the timer panel)
   win = new BrowserWindow({
     x: b.x + b.width - width, y: b.y + b.height - height, width, height,
     transparent: true, frame: false, alwaysOnTop: true, focusable: false,
     hasShadow: false, resizable: false, skipTaskbar: true, show: false,
-    webPreferences: { contextIsolation: true, preload: path.join(__dirname, 'preload.js') }
+    webPreferences: {
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js'),
+      autoplayPolicy: 'no-user-gesture-required'   // lets the alarm sound play
+    }
   });
   win.setAlwaysOnTop(true, 'screen-saver');
   win.setIgnoreMouseEvents(true, { forward: true }); // click-through by default
@@ -66,6 +71,17 @@ function pollTaskbar() {
     tbShown = next;
     send('taskbar', tbShown);
   }
+}
+
+// Tell the page where the mouse is (relative to the buddy window).
+// The page uses this for hover detection and to decide when clicks should work.
+function sendCursor() {
+  if (!win || win.isDestroyed()) return;
+  const p = screen.getCursorScreenPoint();
+  if (p.x === lastCx && p.y === lastCy) return;   // only send when the mouse moved
+  lastCx = p.x; lastCy = p.y;
+  const wb = win.getBounds();
+  send('cursor', { x: p.x - wb.x, y: p.y - wb.y });
 }
 
 // Windows pulls the taskbar above other always-on-top windows when you use it,
@@ -124,6 +140,7 @@ app.whenReady().then(() => {
   createWindow();
   createTray();
   setInterval(pollTaskbar, 120);
+  setInterval(sendCursor, 40);
   setInterval(keepOnTop, 300);
 
   powerMonitor.on('resume', () => setTimeout(greet, 2000));        // wake from sleep

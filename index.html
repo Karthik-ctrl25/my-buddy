@@ -13,12 +13,46 @@
                    background:#ffd400; font-weight:700; cursor:pointer; }
   #char { pointer-events:auto; user-select:none; transform-origin:50% 100%; }
   #actor.sit #char { pointer-events:none; }  /* sitting never blocks clicks */
+
+  /* countdown tag above his head while a Pomodoro runs */
+  #tag { display:none; background:#fff; border:2px solid #222; border-radius:12px; padding:2px 8px;
+         font-weight:700; font-size:13px; margin-bottom:4px; }
+
+  /* round icon row that appears when you hover on him */
+  #menu { display:none; gap:8px; margin-bottom:6px; pointer-events:auto; }
+  .icon { width:44px; height:44px; border-radius:50%; border:3px solid #222; background:#fff;
+          font-size:22px; cursor:pointer; padding:0; }
+  .icon:hover { background:#ffd400; }
+
+  /* Pomodoro panel */
+  #panel { display:none; pointer-events:auto; background:#fff; border:3px solid #222; border-radius:16px;
+           padding:10px 12px; font-weight:700; font-size:14px; margin-bottom:6px; width:196px; text-align:center; }
+  #panel .row { display:flex; align-items:center; justify-content:center; gap:6px; margin:6px 0; }
+  #panel button { padding:4px 9px; border:2px solid #222; border-radius:10px; background:#ffd400;
+                  font-weight:700; cursor:pointer; }
+  #panel .hint { font-size:11px; font-weight:600; color:#555; }
+  #pRun { display:none; }
 </style>
 </head>
 <body>
 <div id="actor">
+  <div id="tag"></div>
+  <div id="panel">
+    <div>⏱️ Pomodoro</div>
+    <div id="pSetup">
+      <div class="row">📚 Study <button id="sMinus">−</button><span id="sVal">25</span><button id="sPlus">+</button> min</div>
+      <div class="row">☕ Break <button id="bMinus">−</button><span id="bVal">5</span><button id="bPlus">+</button> min</div>
+      <div class="hint">Break 0 = no break</div>
+      <div class="row"><button id="pStart">START</button><button id="pCancel">Cancel</button></div>
+    </div>
+    <div id="pRun">
+      <div id="pLeft" style="margin:8px 0"></div>
+      <div class="row"><button id="pStop">STOP timer</button><button id="pClose">Close</button></div>
+    </div>
+  </div>
   <div id="bubble"><div id="msg"></div><div id="btns">
     <button id="yes">YES</button><button id="later">Remind me later</button></div></div>
+  <div id="menu"><button class="icon" id="iPomo" title="Pomodoro timer">⏱️</button></div>
   <img id="char" src="assets/front.png" draggable="false">
 </div>
 
@@ -41,8 +75,14 @@ const SIT_DROP = 40;                          // taskbar shown: legs hang this f
                                               //   keep this BELOW TASKBAR_H, bigger = lower & rises less
 const SIT_DROP_HIDDEN = 25;                    // taskbar hidden: 0 = feet rest on the screen bottom
 
+// --- Pomodoro ---
+const POMO_SEC_PER_MIN = 60;                  // 60 = real minutes | set to 1 to TEST (1 "minute" = 1 second)
+const HOVER_MS = 400;                         // hover on him this long to show the icons
+const ALARM_MS = 5000;                        // alarm sound + dance length
+
 const $ = id => document.getElementById(id);
 const actor = $('actor'), ch = $('char'), bubble = $('bubble'), msg = $('msg'), btns = $('btns');
+const tag = $('tag'), menu = $('menu'), panel = $('panel');
 ch.style.height = CHAR_H + 'px';
 const W = () => window.innerWidth;
 const TB = () => Math.max(0, screen.height - screen.availHeight);          // taskbar height (always-visible mode)
@@ -50,7 +90,8 @@ const sitX = () => W() - SIT_FROM_RIGHT_PX / window.devicePixelRatio - AW / 2;
 
 // ---------- poses (missing files fall back to front.png) ----------
 const loaded = new Set(['front', 'back']);
-['sit','hand_up','hands_up','leg_up','disco','cup_hold','cup_drink','thumbs_up','run1','run2'].forEach(n => {
+['sit','hand_up','hands_up','leg_up','disco','cup_hold','cup_drink','thumbs_up','run1','run2',
+ 'think','clock_hold'].forEach(n => {
   const i = new Image(); i.onload = () => loaded.add(n); i.src = `assets/${n}.png`;
 });
 const DANCE = ['hand_up','hands_up','leg_up','disco','back'];
@@ -58,18 +99,22 @@ let cur = '';
 function setImg(n) { if (!loaded.has(n)) n = 'front'; if (n !== cur) { cur = n; ch.src = `assets/${n}.png`; } }
 
 // ---------- click-through ----------
+// The window ignores the mouse by default. We turn clicks ON only while the mouse is over
+// a button/panel (see syncClick below), so he never blocks your normal clicks.
 let ctState = null;
 function ct(on) { if (on !== ctState) { ctState = on; window.api.clickThrough(on); } }
-[ch, bubble].forEach(el => {
-  el.addEventListener('mouseenter', () => { if (state !== 'run' && state !== 'sit') ct(false); });
-  el.addEventListener('mouseleave', () => ct(true));
-});
+ct(true);
 
 // ---------- state ----------
 let x = sitX(), target = null, speed = 0, face = 1, resolveMove = null;
 let state = 'sit', mode = 'idle', prio = 0, token = 0, hidden = false, tbShown = false;
 let answer = null, remindTimer = null, musicEnabled = true, musicOn = false, musicDismissed = false;
 let energy = 0, loudSince = null, silentSince = null;
+let forceDance = false;                          // dance even without music (alarm)
+let cx = null, cy = null;                        // mouse position inside this window (sent by main.js)
+let menuShown = false, panelOpen = false, hoverSince = null, leaveSince = null;
+let pomo = null;                                 // running timer: { phase:'study'|'break', endAt, breakMin }
+let studyMin = 25, breakMin = 5;
 
 const w = (ms, ok) => new Promise((res, rej) => setTimeout(() => (ok() ? res() : rej()), ms));
 function moveTo(tx, sp, ok) {
@@ -82,23 +127,92 @@ function say(t, withBtns = false) {
   bubble.style.display = t ? 'block' : 'none';
   msg.textContent = t || '';
   btns.style.display = withBtns ? 'block' : 'none';
-  if (!t) ct(true);
 }
 function flash(t) {                               // short message while idle (e.g. music on/off)
   if (mode !== 'idle') return;
   say(t);
   setTimeout(() => { if (mode === 'idle') say(null); }, 1800);
 }
-function reset() { target = null; state = 'sit'; mode = 'idle'; prio = 0; x = sitX(); say(null); ct(true); }
+function reset() {
+  target = null; state = 'sit'; mode = 'idle'; prio = 0; x = sitX();
+  forceDance = false; stopAlarm(); say(null);
+}
 
+// ================= ALARM SOUND =================
+let alarmAudio = null, beepTimer = null, beepCtx = null;
+function beepAlarm() {                           // fallback if assets/alarm.mp3 is missing
+  if (beepTimer) return;
+  beepCtx = beepCtx || new AudioContext();
+  const beep = () => {
+    const o = beepCtx.createOscillator(), g = beepCtx.createGain();
+    o.frequency.value = 880; g.gain.value = 0.2;
+    o.connect(g); g.connect(beepCtx.destination);
+    o.start(); o.stop(beepCtx.currentTime + 0.2);
+  };
+  beep(); beepTimer = setInterval(beep, 500);
+}
+function playAlarm() {
+  stopAlarm();
+  const a = new Audio('assets/alarm.mp3');
+  a.loop = true; alarmAudio = a;
+  a.addEventListener('error', beepAlarm, { once: true });
+  a.play().catch(beepAlarm);
+}
+function stopAlarm() {
+  if (alarmAudio) { alarmAudio.pause(); alarmAudio = null; }
+  if (beepTimer) { clearInterval(beepTimer); beepTimer = null; }
+}
+
+// ================= HOVER MENU + POMODORO PANEL =================
+function showMenu() { menuShown = true; menu.style.display = 'flex'; state = 'think'; }
+function hideMenu() {
+  if (!menuShown) return;
+  menuShown = false; menu.style.display = 'none';
+  if (state === 'think') state = 'sit';
+}
+function openPanel() {                            // he holds the clock while you set the timer
+  hideMenu();
+  panelOpen = true; mode = 'pomo'; prio = 2; state = 'holdclock';
+  renderPanel(); panel.style.display = 'block';
+}
+function closePanel() {
+  if (!panelOpen) return;
+  panelOpen = false; panel.style.display = 'none';
+  if (mode === 'pomo') { mode = 'idle'; prio = 0; state = 'sit'; }
+}
+const fmt = ms => { const s = Math.ceil(ms / 1000); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+function renderPanel() {
+  const running = !!pomo;
+  $('pSetup').style.display = running ? 'none' : 'block';
+  $('pRun').style.display = running ? 'block' : 'none';
+  $('sVal').textContent = studyMin; $('bVal').textContent = breakMin;
+  if (running) $('pLeft').textContent = (pomo.phase === 'study' ? '📚 ' : '☕ ') + fmt(pomo.endAt - Date.now()) + ' left';
+}
+$('iPomo').onclick = () => { if (mode === 'idle') openPanel(); };
+$('sMinus').onclick = () => { studyMin = Math.max(5, studyMin - 5); renderPanel(); };
+$('sPlus').onclick  = () => { studyMin = Math.min(180, studyMin + 5); renderPanel(); };
+$('bMinus').onclick = () => { breakMin = Math.max(0, breakMin - 5); renderPanel(); };
+$('bPlus').onclick  = () => { breakMin = Math.min(60, breakMin + 5); renderPanel(); };
+$('pStart').onclick = () => {
+  pomo = { phase: 'study', endAt: Date.now() + studyMin * POMO_SEC_PER_MIN * 1000, breakMin };
+  closePanel();                                   // he sits as usual, the tag shows the countdown
+};
+$('pCancel').onclick = closePanel;
+$('pClose').onclick = closePanel;
+$('pStop').onclick = () => { pomo = null; closePanel(); };
+
+// ================= SCENE STARTER =================
 function start(name, p, fn) {
-  if (hidden && name !== 'remind') return false;     // hidden: only water reminders may appear
+  if (hidden && name !== 'remind' && name !== 'alarm') return false;  // hidden: only reminders/alarms appear
   if (mode !== 'idle' && p <= prio) return false;    // only higher priority can interrupt
+  closePanel(); hideMenu();
   const my = ++token; mode = name; prio = p;
   fn(() => my === token).then(() => { if (my === token) reset(); }).catch(() => {});
   return true;
 }
 function dismissNow() {
+  hideMenu();
+  if (mode === 'pomo') { closePanel(); return; }
   if (mode === 'remind' && answer) { answer('later'); return; }
   if (mode === 'music') { musicDismissed = true; return; }   // scene sees the flag and goes back to sit
   if (mode !== 'idle') { token++; reset(); }
@@ -136,6 +250,35 @@ async function music(ok) {                       // get up, dance, wander, sit a
   await moveTo(sitX(), RUN_SPEED, ok);
 }
 
+async function alarm(ok, text) {                 // timer finished: run to middle, alarm + dance 5 s, back to sit
+  musicDismissed = true;                         // don't mistake the alarm sound for music
+  await moveTo(W() * 0.5 - AW / 2, RUN_SPEED, ok);
+  state = 'dance'; forceDance = true; say(text); playAlarm();
+  await w(ALARM_MS, ok);
+  forceDance = false; stopAlarm(); say(null);
+  await moveTo(sitX(), RUN_SPEED, ok);
+}
+
+function fireAlarm() {                           // called by the timer tick when time is up
+  const p = pomo;
+  const text = p.phase === 'study'
+    ? (p.breakMin > 0 ? 'Study done! Break time ☕' : 'Study done! 🎉')
+    : 'Break over! Back to it 📚';
+  if (!start('alarm', 3, ok => alarm(ok, text))) return;      // busy (e.g. water reminder): try again next tick
+  pomo = (p.phase === 'study' && p.breakMin > 0)              // next phase: the break, or finished
+    ? { phase: 'break', endAt: Date.now() + p.breakMin * POMO_SEC_PER_MIN * 1000, breakMin: 0 }
+    : null;
+}
+
+setInterval(() => {                              // timer tick: update tag, fire alarm when time is up
+  if (!pomo) { tag.style.display = 'none'; return; }
+  const left = pomo.endAt - Date.now();
+  tag.textContent = (pomo.phase === 'study' ? '📚 ' : '☕ ') + fmt(Math.max(0, left));
+  tag.style.display = 'block';
+  if (panelOpen) renderPanel();
+  if (left <= 0) fireAlarm();
+}, 500);
+
 function scheduleRemind(min) {
   clearTimeout(remindTimer);
   remindTimer = setTimeout(() => start('remind', 3, remind), min * 60000);
@@ -147,17 +290,55 @@ $('later').onclick = () => answer && answer('later');
 ch.onclick = () => { if (mode === 'music' || mode === 'greet') dismissNow(); };
 
 window.api.onCmd((name, arg) => {
-  if (name === 'greet') start('greet', 2, greet);
+  if (name === 'cursor') { cx = arg.x; cy = arg.y; }
+  else if (name === 'greet') start('greet', 2, greet);
   else if (name === 'remind') start('remind', 3, remind);
   else if (name === 'dismiss') dismissNow();
   else if (name === 'taskbar') tbShown = arg;     // auto-hide taskbar popped up / hid
-  else if (name === 'hide-toggle') { hidden = !hidden; if (hidden && (mode === 'music' || mode === 'greet')) dismissNow(); }
+  else if (name === 'hide-toggle') {
+    hidden = !hidden;
+    if (hidden) { hideMenu(); closePanel(); if (mode === 'music' || mode === 'greet') dismissNow(); }
+  }
   else if (name === 'music') {
     musicEnabled = arg;
     if (!arg && mode === 'music') musicDismissed = true;
     flash(arg ? 'Music dance ON 🎵' : 'Music dance OFF 🔇');
   }
 });
+
+// ================= MOUSE: hover + when clicks should work =================
+const inRect = (r, pad = 0) => cx >= r.left - pad && cx <= r.right + pad && cy >= r.top - pad && cy <= r.bottom + pad;
+
+function syncClick() {                           // clicks ON only while the mouse is over something clickable
+  if (cx === null) return;
+  const els = [];
+  if (bubble.style.display === 'block') els.push(bubble);
+  if (menuShown) els.push(menu);
+  if (panelOpen) els.push(panel);
+  let over = els.some(el => inRect(el.getBoundingClientRect(), 4));
+  if (!over && (mode === 'music' || mode === 'greet') && state !== 'run') over = inRect(ch.getBoundingClientRect());
+  ct(!over);
+}
+
+function hoverTick(now) {                        // hover on him for HOVER_MS => thinking pose + icons
+  const can = cx !== null && mode === 'idle' && !panelOpen && !hidden && (state === 'sit' || state === 'think');
+  if (!can) { hoverSince = null; leaveSince = null; if (menuShown) hideMenu(); return; }
+  const cr = ch.getBoundingClientRect();
+  if (!menuShown) {
+    const inBody = cx >= cr.left + cr.width * 0.2 && cx <= cr.right - cr.width * 0.2 &&
+                   cy >= cr.top && cy <= cr.top + cr.height * 0.65;      // upper body only (not the legs)
+    if (inBody) { if (hoverSince === null) hoverSince = now; else if (now - hoverSince >= HOVER_MS) showMenu(); }
+    else hoverSince = null;
+  } else {
+    const mr = menu.getBoundingClientRect();     // stay open while the mouse is on him or the icons
+    const inside = cx >= Math.min(cr.left, mr.left) - 14 && cx <= Math.max(cr.right, mr.right) + 14 &&
+                   cy >= mr.top - 14 && cy <= cr.bottom + 14;
+    if (inside) leaveSince = null;
+    else if (leaveSince === null) leaveSince = now;
+    else if (now - leaveSince >= 600) { hideMenu(); leaveSince = null; }
+  }
+}
+setInterval(() => { hoverTick(performance.now()); syncClick(); }, 50);
 
 // ================= AUDIO -> music detection =================
 async function startAudio() {
@@ -202,9 +383,8 @@ function animate(now) {
     if (Math.abs(d) <= step) { x = target; target = null; const r = resolveMove; resolveMove = null; if (r) r(); }
     else x += Math.sign(d) * step;
   }
-  if (mode === 'idle' || state === 'run') ct(true);
 
-  const e = energy > 0.15 ? energy : 0;
+  const e = Math.max(energy > 0.15 ? energy : 0, forceDance ? 0.6 : 0);
   let up = 0, tilt = 0, f = 1;
   if (state === 'run') {
     const frames = loaded.has('run1') && loaded.has('run2') ? ['run1', 'run2'] : ['leg_up', 'front'];
@@ -219,6 +399,8 @@ function animate(now) {
     setImg(idx % 2 ? 'cup_drink' : 'cup_hold');
   } else if (state === 'wave') setImg('hand_up');
   else if (state === 'thumb') setImg('thumbs_up');
+  else if (state === 'think') setImg('think');
+  else if (state === 'holdclock') setImg('clock_hold');
   else setImg('sit');                              // idle: sitting (falls back to front.png)
 
   // ground follows the taskbar (rises when it pops up, sinks when it hides)
