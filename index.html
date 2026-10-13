@@ -94,7 +94,11 @@ const loaded = new Set(['front', 'back']);
  'think','clock_hold'].forEach(n => {
   const i = new Image(); i.onload = () => loaded.add(n); i.src = `assets/${n}.png`;
 });
-const DANCE = ['hand_up','hands_up','leg_up','disco','dance_clap','dance_twist',,'dance_squat','back'];
+const DANCE = [
+  'hand_up', 'dance_squat', 'hands_up', 'dance_twist',
+  'leg_up', 'dance_clap', 'disco', 'back'
+  // later: 'dance_wide', 'dance_lunge', 'dance_shoulder', 'dance_kick', 'dance_spin', ...
+];
 let cur = '';
 function setImg(n) { if (!loaded.has(n)) n = 'front'; if (n !== cur) { cur = n; ch.src = `assets/${n}.png`; } }
 
@@ -392,7 +396,11 @@ function animate(now) {
     setImg(frames[idx % 2]); up = Math.abs(Math.sin(t * 0.8)) * 8; f = face;
   } else if (state === 'dance') {
     const list = DANCE.filter(n => loaded.has(n));
-    if (now - lastSwap > 450) { idx++; lastSwap = now; }
+    if (now - lastSwap > 450) {
+  let n;
+  do { n = Math.floor(Math.random() * list.length); } while (n === idx % list.length && list.length > 1);
+  idx = n; lastSwap = now;
+}
     setImg(list[idx % list.length]); up = Math.abs(Math.sin(t)) * e * 20; tilt = Math.sin(t) * e * 8;
   } else if (state === 'cup') {
     if (now - lastSwap > 1200) { idx++; lastSwap = now; }
