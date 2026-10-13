@@ -94,7 +94,7 @@ const loaded = new Set(['front', 'back']);
  'think','clock_hold'].forEach(n => {
   const i = new Image(); i.onload = () => loaded.add(n); i.src = `assets/${n}.png`;
 });
-const DANCE = ['hand_up','hands_up','leg_up','disco','dance_clap','dance_twist','back'];
+const DANCE = ['hand_up','hands_up','leg_up','disco','dance_clap','dance_twist',,'dance_squat','back'];
 let cur = '';
 function setImg(n) { if (!loaded.has(n)) n = 'front'; if (n !== cur) { cur = n; ch.src = `assets/${n}.png`; } }
 
