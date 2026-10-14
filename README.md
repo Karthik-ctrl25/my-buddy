@@ -11,6 +11,7 @@ Built with Electron, Node.js, JavaScript, and custom character animations.
 - 🎵 Music detection with dancing animations
 - 🪑 Sits on the taskbar
 - ⏱️ Pomodoro Timer
+- 📊 System Buddy: Live battery, RAM, and CPU monitoring with low-battery warnings
 - 🖱️ Transparent, click-through window
 - 🚀 Automatic startup with Windows
 
