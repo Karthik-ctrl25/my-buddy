@@ -10,6 +10,7 @@ Built with Electron, Node.js, JavaScript, and custom character animations.
 - 👋 Greetings on startup, unlock, and wake from sleep
 - 🎵 Music detection with dancing animations
 - 🪑 Sits on the taskbar
+- ⏱️ Pomodoro Timer
 - 🖱️ Transparent, click-through window
 - 🚀 Automatic startup with Windows
 
