@@ -12,6 +12,7 @@ Built with Electron, Node.js, JavaScript, and custom character animations.
 - 🪑 Sits on the taskbar
 - ⏱️ Pomodoro Timer
 - 📊 System Buddy: Live battery, RAM, and CPU monitoring with low-battery warnings
+- 🛡️ Streak Guard: Checks public GitHub activity
 - 🖱️ Transparent, click-through window
 - 🚀 Automatic startup with Windows
 
