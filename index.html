@@ -18,26 +18,31 @@
   #tag { display:none; background:#fff; border:2px solid #222; border-radius:12px; padding:2px 8px;
          font-weight:700; font-size:13px; margin-bottom:4px; }
 
-  /* round icon row that appears when you hover on him */
+  /* round icons that "shoot up" when you hover on him */
   #menu { display:none; gap:8px; margin-bottom:6px; pointer-events:auto; }
   .icon { width:44px; height:44px; border-radius:50%; border:3px solid #222; background:#fff;
           font-size:22px; cursor:pointer; padding:0; }
   .icon:hover { background:#ffd400; }
+  #menu .icon { animation: shoot .35s cubic-bezier(.2,.9,.3,1.2) both; }
+  #menu .icon:nth-child(2) { animation-delay: .07s; }
+  #menu .icon:nth-child(3) { animation-delay: .14s; }
+  @keyframes shoot { from { transform: translateY(80px) scale(.2); opacity: 0; } to { transform: none; opacity: 1; } }
 
-  /* Pomodoro panel */
-  #panel { display:none; pointer-events:auto; background:#fff; border:3px solid #222; border-radius:16px;
-           padding:10px 12px; font-weight:700; font-size:14px; margin-bottom:6px; width:196px; text-align:center; }
-  #panel .row { display:flex; align-items:center; justify-content:center; gap:6px; margin:6px 0; }
-  #panel button { padding:4px 9px; border:2px solid #222; border-radius:10px; background:#ffd400;
-                  font-weight:700; cursor:pointer; }
-  #panel .hint { font-size:11px; font-weight:600; color:#555; }
+  /* panels (Pomodoro, System) */
+  .pnl { display:none; pointer-events:auto; background:#fff; border:3px solid #222; border-radius:16px;
+         padding:10px 12px; font-weight:700; font-size:14px; margin-bottom:6px; width:196px; text-align:center; }
+  .pnl .row { display:flex; align-items:center; justify-content:center; gap:6px; margin:6px 0; }
+  .pnl .line { display:flex; justify-content:space-between; margin:6px 0; }
+  .pnl button { padding:4px 9px; border:2px solid #222; border-radius:10px; background:#ffd400;
+                font-weight:700; cursor:pointer; }
+  .pnl .hint { font-size:11px; font-weight:600; color:#555; }
   #pRun { display:none; }
 </style>
 </head>
 <body>
 <div id="actor">
   <div id="tag"></div>
-  <div id="panel">
+  <div id="panel" class="pnl">
     <div>⏱️ Pomodoro</div>
     <div id="pSetup">
       <div class="row">📚 Study <button id="sMinus">−</button><span id="sVal">25</span><button id="sPlus">+</button> min</div>
@@ -50,9 +55,20 @@
       <div class="row"><button id="pStop">STOP timer</button><button id="pClose">Close</button></div>
     </div>
   </div>
+  <div id="sysPanel" class="pnl">
+    <div>📊 System</div>
+    <div class="line"><span>🔋 Battery</span><span id="sBatt">...</span></div>
+    <div class="line"><span>🧠 RAM</span><span id="sRam">...</span></div>
+    <div class="line"><span>⚙️ CPU</span><span id="sCpu">...</span></div>
+    <div class="row"><button id="sysClose">Close</button></div>
+  </div>
   <div id="bubble"><div id="msg"></div><div id="btns">
     <button id="yes">YES</button><button id="later">Remind me later</button></div></div>
-  <div id="menu"><button class="icon" id="iPomo" title="Pomodoro timer">⏱️</button></div>
+  <div id="menu">
+    <button class="icon" id="iPomo" title="Pomodoro timer">⏱️</button>
+    <button class="icon" id="iSys" title="System stats">📊</button>
+    <button class="icon" id="iStreak" title="Check GitHub streak">🔥</button>
+  </div>
   <img id="char" src="assets/front.png" draggable="false">
 </div>
 
@@ -61,7 +77,7 @@
 const TEST_MODE = false;                      // true = reminders every 12 s (testing) | false = normal
 const REMIND_MIN = TEST_MODE ? 0.2 : 20;      // normal: every 20 min (use 10 for 10 min)
 const SNOOZE_MIN = TEST_MODE ? 0.2 : 5;       // "later" / ignored => ask again after this
-const STAY_MS = 90000;                        // how long the reminder waits for an answer
+const STAY_MS = 90000;                        // how long a reminder waits for an answer
 const CHAR_H = 130;                           // buddy height in px (smaller = smaller buddy)
 const RUN_SPEED = 450;                        // px/sec running (lower = slower)
 const WANDER_SPEED = 300;                     // px/sec wandering while dancing
@@ -80,9 +96,13 @@ const POMO_SEC_PER_MIN = 60;                  // 60 = real minutes | set to 1 to
 const HOVER_MS = 400;                         // hover on him this long to show the icons
 const ALARM_MS = 5000;                        // alarm sound + dance length
 
+// --- battery warning ---
+const LOW_BATT = 1.0;                        // warn BELOW 30% (use 1.0 to TEST while unplugged)
+const BATT_REPEAT_MIN = 3;                    // warn again every 3 minutes while it stays low
+
 const $ = id => document.getElementById(id);
 const actor = $('actor'), ch = $('char'), bubble = $('bubble'), msg = $('msg'), btns = $('btns');
-const tag = $('tag'), menu = $('menu'), panel = $('panel');
+const tag = $('tag'), menu = $('menu'), panel = $('panel'), sysPanel = $('sysPanel');
 ch.style.height = CHAR_H + 'px';
 const W = () => window.innerWidth;
 const TB = () => Math.max(0, screen.height - screen.availHeight);          // taskbar height (always-visible mode)
@@ -96,7 +116,7 @@ const DANCE = [
   // later: 'dance_wide', 'dance_lunge', 'dance_shoulder', 'dance_kick', 'dance_spin', ...
 ];
 const loaded = new Set(['front', 'back']);
-[...DANCE, 'sit','cup_hold','cup_drink','thumbs_up','run1','run2','think','clock_hold'].forEach(n => {
+[...DANCE, 'sit','cup_hold','cup_drink','thumbs_up','run1','run2','think','clock_hold','archer'].forEach(n => {
   const i = new Image(); i.onload = () => loaded.add(n); i.src = `assets/${n}.png`;
 });
 let cur = '';
@@ -119,6 +139,7 @@ let cx = null, cy = null;                        // mouse position inside this w
 let menuShown = false, panelOpen = false, hoverSince = null, leaveSince = null;
 let pomo = null;                                 // running timer: { phase:'study'|'break', endAt, breakMin }
 let studyMin = 25, breakMin = 5;
+let sysTimer = null, batt = null, lastBattWarn = 0;
 
 const w = (ms, ok) => new Promise((res, rej) => setTimeout(() => (ok() ? res() : rej()), ms));
 function moveTo(tx, sp, ok) {
@@ -132,6 +153,7 @@ function say(t, withBtns = false) {
   msg.textContent = t || '';
   btns.style.display = withBtns ? 'block' : 'none';
 }
+function labels(a, b) { $('yes').textContent = a; $('later').textContent = b; }   // bubble button names
 function flash(t) {                               // short message while idle (e.g. music on/off)
   if (mode !== 'idle') return;
   say(t);
@@ -155,6 +177,17 @@ function beepAlarm() {                           // fallback if assets/alarm.mp3
   };
   beep(); beepTimer = setInterval(beep, 500);
 }
+function beepOnce(times = 3) {                   // a few short beeps (low battery)
+  beepCtx = beepCtx || new AudioContext();
+  beepCtx.resume();
+  for (let i = 0; i < times; i++) {
+    const o = beepCtx.createOscillator(), g = beepCtx.createGain();
+    o.frequency.value = 880; g.gain.value = 0.2;
+    o.connect(g); g.connect(beepCtx.destination);
+    const t0 = beepCtx.currentTime + i * 0.3;
+    o.start(t0); o.stop(t0 + 0.15);
+  }
+}
 function playAlarm() {
   stopAlarm();
   const a = new Audio('assets/alarm.mp3');
@@ -167,22 +200,24 @@ function stopAlarm() {
   if (beepTimer) { clearInterval(beepTimer); beepTimer = null; }
 }
 
-// ================= HOVER MENU + POMODORO PANEL =================
-function showMenu() { menuShown = true; menu.style.display = 'flex'; state = 'think'; }
+// ================= HOVER MENU + PANELS =================
+// Hover on him => archer pose ('aim') and the icons shoot up.
+function showMenu() { menuShown = true; menu.style.display = 'flex'; state = 'aim'; }
 function hideMenu() {
   if (!menuShown) return;
   menuShown = false; menu.style.display = 'none';
-  if (state === 'think') state = 'sit';
+  if (state === 'aim') state = 'sit';
 }
-function openPanel() {                            // he holds the clock while you set the timer
+function openPanel() {                            // Pomodoro: he holds the clock while you set the timer
   hideMenu();
   panelOpen = true; mode = 'pomo'; prio = 2; state = 'holdclock';
   renderPanel(); panel.style.display = 'block';
 }
 function closePanel() {
   if (!panelOpen) return;
-  panelOpen = false; panel.style.display = 'none';
-  if (mode === 'pomo') { mode = 'idle'; prio = 0; state = 'sit'; }
+  panelOpen = false; panel.style.display = 'none'; sysPanel.style.display = 'none';
+  clearInterval(sysTimer);
+  if (mode === 'pomo' || mode === 'sys') { mode = 'idle'; prio = 0; state = 'sit'; }
 }
 const fmt = ms => { const s = Math.ceil(ms / 1000); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
 function renderPanel() {
@@ -205,9 +240,30 @@ $('pCancel').onclick = closePanel;
 $('pClose').onclick = closePanel;
 $('pStop').onclick = () => { pomo = null; closePanel(); };
 
+// ---------- System panel: battery (from the browser), RAM + CPU (from main.js) ----------
+if (navigator.getBattery) navigator.getBattery().then(b => { batt = b; }).catch(() => {});
+const battText = () => batt ? Math.round(batt.level * 100) + '%' + (batt.charging ? ' (charging)' : '') : 'n/a';
+async function refreshSys() {
+  try {
+    const s = await window.api.getStats();
+    $('sRam').textContent = s.ramUsedGB.toFixed(1) + ' / ' + s.ramTotalGB.toFixed(1) + ' GB';
+    $('sCpu').textContent = s.cpu + '%';
+  } catch (e) { $('sRam').textContent = 'n/a'; $('sCpu').textContent = 'n/a'; }
+  $('sBatt').textContent = battText();
+}
+function openSys() {
+  hideMenu();
+  panelOpen = true; mode = 'sys'; prio = 2; state = 'think';
+  sysPanel.style.display = 'block';
+  refreshSys(); sysTimer = setInterval(refreshSys, 2000);
+}
+$('iSys').onclick = () => { if (mode === 'idle') openSys(); };
+$('sysClose').onclick = closePanel;
+
 // ================= SCENE STARTER =================
+const ALWAYS = ['remind', 'alarm', 'battery'];    // these may appear even while he is hidden
 function start(name, p, fn) {
-  if (hidden && name !== 'remind' && name !== 'alarm') return false;  // hidden: only reminders/alarms appear
+  if (hidden && !ALWAYS.includes(name)) return false;
   if (mode !== 'idle' && p <= prio) return false;    // only higher priority can interrupt
   closePanel(); hideMenu();
   const my = ++token; mode = name; prio = p;
@@ -216,8 +272,8 @@ function start(name, p, fn) {
 }
 function dismissNow() {
   hideMenu();
-  if (mode === 'pomo') { closePanel(); return; }
-  if (mode === 'remind' && answer) { answer('later'); return; }
+  if (mode === 'pomo' || mode === 'sys') { closePanel(); return; }
+  if ((mode === 'remind' || mode === 'streak') && answer) { answer(mode === 'remind' ? 'later' : 'timeout'); return; }
   if (mode === 'music') { musicDismissed = true; return; }   // scene sees the flag and goes back to sit
   if (mode !== 'idle') { token++; reset(); }
 }
@@ -231,11 +287,28 @@ async function greet(ok) {                       // run to the far left end, wav
 
 async function remind(ok) {                      // water reminder: cup + sipping
   await moveTo(W() * 0.5 - AW / 2, RUN_SPEED, ok);
+  labels('YES', 'Remind me later');
   state = 'cup'; say('Hey Karthik! Time for water 💧', true);
   const a = await Promise.race([new Promise(r => (answer = r)), w(STAY_MS, ok).then(() => 'timeout')]);
   answer = null; say(null);
   if (a === 'yes') { state = 'thumb'; await w(1800, ok); scheduleRemind(REMIND_MIN); }
   else scheduleRemind(SNOOZE_MIN);
+  await moveTo(sitX(), RUN_SPEED, ok);
+}
+
+async function streak(ok) {                      // streak guard: no GitHub push today yet
+  await moveTo(W() * 0.5 - AW / 2, RUN_SPEED, ok);
+  labels('On it 👍', 'Skip today');
+  state = 'think'; say('No commit today yet 🤔 Push something!', true);
+  const a = await Promise.race([new Promise(r => (answer = r)), w(STAY_MS, ok).then(() => 'timeout')]);
+  answer = null; say(null); labels('YES', 'Remind me later');
+  if (a === 'later') window.api.streakSkip();    // "Skip today": main.js stops asking until tomorrow
+  await moveTo(sitX(), RUN_SPEED, ok);           // "On it" / ignored: main.js asks again in 30 min
+}
+
+async function notice(ok, text, pose, ms = 4500) {   // run to the middle, show a short message, go back
+  await moveTo(W() * 0.5 - AW / 2, RUN_SPEED, ok);
+  state = pose; say(text); await w(ms, ok); say(null);
   await moveTo(sitX(), RUN_SPEED, ok);
 }
 
@@ -283,11 +356,29 @@ setInterval(() => {                              // timer tick: update tag, fire
   if (left <= 0) fireAlarm();
 }, 500);
 
+setInterval(() => {                              // low battery warning
+  if (!batt || batt.charging || batt.level >= LOW_BATT) return;
+  if (Date.now() - lastBattWarn < BATT_REPEAT_MIN * 60000) return;
+  const pct = Math.round(batt.level * 100);
+  if (start('battery', 2, ok => { beepOnce(3); return notice(ok, `Charge me! 🔋 ${pct}%`, 'wave'); })) lastBattWarn = Date.now();
+}, 10000);
+
 function scheduleRemind(min) {
   clearTimeout(remindTimer);
   remindTimer = setTimeout(() => start('remind', 3, remind), min * 60000);
 }
 scheduleRemind(REMIND_MIN);
+
+async function manualStreak() {                  // hover menu fire icon / tray: check GitHub right now
+  if (mode !== 'idle') return;
+  flash('Checking GitHub... ⏳');
+  const r = await window.api.streakCheck();
+  say(null);
+  if (r.error) status('GitHub check failed ❌');
+  else if (r.pushed) status('Commit found today ✅ Streak safe!');
+  else start('streak', 2, streak);
+}
+$('iStreak').onclick = () => { hideMenu(); manualStreak(); };
 
 $('yes').onclick = () => answer && answer('yes');
 $('later').onclick = () => answer && answer('later');
@@ -297,6 +388,8 @@ window.api.onCmd((name, arg) => {
   if (name === 'cursor') { cx = arg.x; cy = arg.y; }
   else if (name === 'greet') start('greet', 2, greet);
   else if (name === 'remind') start('remind', 3, remind);
+  else if (name === 'streak') start('streak', 2, streak);
+  else if (name === 'streak-now') manualStreak();
   else if (name === 'dismiss') dismissNow();
   else if (name === 'taskbar') tbShown = arg;     // auto-hide taskbar popped up / hid
   else if (name === 'hide-toggle') {
@@ -318,14 +411,14 @@ function syncClick() {                           // clicks ON only while the mou
   const els = [];
   if (bubble.style.display === 'block') els.push(bubble);
   if (menuShown) els.push(menu);
-  if (panelOpen) els.push(panel);
+  if (panelOpen) [panel, sysPanel].forEach(p => { if (p.style.display === 'block') els.push(p); });
   let over = els.some(el => inRect(el.getBoundingClientRect(), 4));
   if (!over && (mode === 'music' || mode === 'greet') && state !== 'run') over = inRect(ch.getBoundingClientRect());
   ct(!over);
 }
 
-function hoverTick(now) {                        // hover on him for HOVER_MS => thinking pose + icons
-  const can = cx !== null && mode === 'idle' && !panelOpen && !hidden && (state === 'sit' || state === 'think');
+function hoverTick(now) {                        // hover on him for HOVER_MS => archer pose + icons
+  const can = cx !== null && mode === 'idle' && !panelOpen && !hidden && (state === 'sit' || state === 'aim');
   if (!can) { hoverSince = null; leaveSince = null; if (menuShown) hideMenu(); return; }
   const cr = ch.getBoundingClientRect();
   if (!menuShown) {
@@ -396,11 +489,11 @@ function animate(now) {
     setImg(frames[idx % 2]); up = Math.abs(Math.sin(t * 0.8)) * 8; f = face;
   } else if (state === 'dance') {
     const list = DANCE.filter(n => loaded.has(n));
-  if (now - lastSwap > 450) {
-  let n;
-  do { n = Math.floor(Math.random() * list.length); } while (n === idx % list.length && list.length > 1);
-  idx = n; lastSwap = now;
-}
+    if (now - lastSwap > 450) {                    // pick a random pose, never the same one twice in a row
+      let n;
+      do { n = Math.floor(Math.random() * list.length); } while (n === idx % list.length && list.length > 1);
+      idx = n; lastSwap = now;
+    }
     setImg(list[idx % list.length]); up = Math.abs(Math.sin(t)) * e * 20; tilt = Math.sin(t) * e * 8;
   } else if (state === 'cup') {
     if (now - lastSwap > 1200) { idx++; lastSwap = now; }
@@ -408,6 +501,7 @@ function animate(now) {
   } else if (state === 'wave') setImg('hand_up');
   else if (state === 'thumb') setImg('thumbs_up');
   else if (state === 'think') setImg('think');
+  else if (state === 'aim') setImg(loaded.has('archer') ? 'archer' : 'think');   // hover: archer shooting up
   else if (state === 'holdclock') setImg('clock_hold');
   else setImg('sit');                              // idle: sitting (falls back to front.png)
 

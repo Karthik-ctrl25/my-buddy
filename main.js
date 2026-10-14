@@ -1,15 +1,19 @@
 const { app, BrowserWindow, screen, session, desktopCapturer, Tray, Menu, nativeImage,
         ipcMain, powerMonitor, globalShortcut } = require('electron');
 const path = require('path');
+const os = require('os');
 
 // fixes the "cache Access denied" errors
 app.setPath('userData', path.join(app.getPath('appData'), 'MyBuddy'));
 app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
 
-const TASKBAR_H = 48;   // height of the Windows taskbar when it pops up (DIP)
+const TASKBAR_H = 48;               // height of the Windows taskbar when it pops up (DIP)
+const GITHUB_USER = 'Karthik-ctrl25';
+const STREAK_HOUR = 21;             // streak guard starts checking at 9 pm (local time)
 
 let win, tray, lastGreet = 0, musicEnabled = true, tbShown = false;
 let lastCx = null, lastCy = null;
+let streakDoneDay = null, nextStreakCheck = 0;   // streak guard memory
 
 if (!app.requestSingleInstanceLock()) {
   console.log('Another MyBuddy is already running. Quitting this one. Run stop-buddy.bat first.');
@@ -25,7 +29,7 @@ function greet() {
 
 function createWindow() {
   const b = screen.getPrimaryDisplay().bounds;
-  const width = Math.round(b.width * 0.45), height = 420;   // small strip, bottom-right only (taller for the timer panel)
+  const width = Math.round(b.width * 0.45), height = 420;   // small strip, bottom-right only
   win = new BrowserWindow({
     x: b.x + b.width - width, y: b.y + b.height - height, width, height,
     transparent: true, frame: false, alwaysOnTop: true, focusable: false,
@@ -74,7 +78,6 @@ function pollTaskbar() {
 }
 
 // Tell the page where the mouse is (relative to the buddy window).
-// The page uses this for hover detection and to decide when clicks should work.
 function sendCursor() {
   if (!win || win.isDestroyed()) return;
   const p = screen.getCursorScreenPoint();
@@ -93,6 +96,47 @@ function keepOnTop() {
   }
 }
 
+// ================= STREAK GUARD =================
+// Looks at your public GitHub events. GitHub counts days in UTC, so we compare UTC dates.
+async function pushedToday() {
+  // TEST: put "return false;" on the next line to force the "no commit" warning, then remove it.
+  const res = await fetch(`https://api.github.com/users/${GITHUB_USER}/events/public?per_page=100`, {
+    headers: { 'User-Agent': 'my-buddy', 'Accept': 'application/vnd.github+json' }
+  });
+  if (!res.ok) throw new Error('GitHub ' + res.status);
+  const events = await res.json();
+  const today = new Date().toISOString().slice(0, 10);
+  return events.some(e => e.type === 'PushEvent' && e.created_at.slice(0, 10) === today);
+}
+
+async function streakTick() {                 // runs every minute
+  const now = new Date();
+  if (now.getHours() < STREAK_HOUR) return;                  // before 9 pm: nothing to do
+  if (streakDoneDay === now.toDateString()) return;          // already pushed (or skipped) today
+  if (Date.now() < nextStreakCheck) return;                  // check at most every 30 min
+  nextStreakCheck = Date.now() + 30 * 60 * 1000;
+  try {
+    if (await pushedToday()) streakDoneDay = now.toDateString();   // pushed: stop checking today
+    else send('streak');                                           // no push yet: he warns you
+  } catch (e) {
+    console.log('streak check failed:', e.message);
+  }
+}
+
+// ================= SYSTEM STATS =================
+let prevCpu = os.cpus();
+function cpuPercent() {
+  const cur = os.cpus();
+  let idle = 0, total = 0;
+  cur.forEach((c, i) => {
+    const p = prevCpu[i];
+    for (const k in c.times) total += c.times[k] - p.times[k];
+    idle += c.times.idle - p.times.idle;
+  });
+  prevCpu = cur;
+  return total ? Math.round(100 * (1 - idle / total)) : 0;
+}
+
 function toggleMusic() {
   musicEnabled = !musicEnabled;
   console.log('music dance enabled:', musicEnabled);
@@ -104,6 +148,7 @@ function buildMenu() {
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Remind me now', click: () => send('remind') },
     { label: 'Say hi', click: () => send('greet') },
+    { label: 'Check GitHub streak now', click: () => send('streak-now') },
     { label: 'Dismiss (Ctrl+Alt+B)', click: () => send('dismiss') },
     { label: 'Hide / Show buddy (Ctrl+Alt+H)', click: () => send('hide-toggle') },
     { label: 'Dance when music plays (Ctrl+Alt+M)', type: 'checkbox', checked: musicEnabled, click: toggleMusic },
@@ -137,11 +182,23 @@ app.whenReady().then(() => {
     if (win && !win.isDestroyed()) win.setIgnoreMouseEvents(on, on ? { forward: true } : undefined);
   });
 
+  // the page asks for these:
+  ipcMain.handle('stats', () => {
+    const total = os.totalmem(), free = os.freemem();
+    return { cpu: cpuPercent(), ramUsedGB: (total - free) / 2 ** 30, ramTotalGB: total / 2 ** 30 };
+  });
+  ipcMain.handle('streak-check', async () => {
+    try { return { pushed: await pushedToday() }; }
+    catch (e) { return { error: e.message }; }
+  });
+  ipcMain.on('streak-skip', () => { streakDoneDay = new Date().toDateString(); });   // "Skip today"
+
   createWindow();
   createTray();
   setInterval(pollTaskbar, 120);
   setInterval(sendCursor, 40);
   setInterval(keepOnTop, 300);
+  setInterval(streakTick, 60 * 1000);
 
   powerMonitor.on('resume', () => setTimeout(greet, 2000));        // wake from sleep
   powerMonitor.on('unlock-screen', () => setTimeout(greet, 1500)); // unlock
