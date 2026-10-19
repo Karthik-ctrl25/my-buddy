@@ -386,6 +386,11 @@ ch.onclick = () => { if (mode === 'music' || mode === 'greet') dismissNow(); };
 
 window.api.onCmd((name, arg) => {
   if (name === 'cursor') { cx = arg.x; cy = arg.y; }
+  else if (name === 'weather') {
+  start('weather', 2, ok =>
+    notice(ok, arg, 'think', 6000)
+  );
+}
   else if (name === 'greet') start('greet', 2, greet);
   else if (name === 'remind') start('remind', 3, remind);
   else if (name === 'streak') start('streak', 2, streak);
