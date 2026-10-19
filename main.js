@@ -33,6 +33,106 @@ function greet() {
   lastGreet = Date.now();
   send('greet');
 }
+// ================= WEATHER UPDATES =================
+
+function weatherWord(code) {
+  if (code === 0) return '☀️ Clear';
+  if (code <= 3) return '⛅ Partly cloudy';
+  if (code === 45 || code === 48) return '🌫️ Foggy';
+  if (code >= 51 && code <= 57) return '🌦️ Drizzle';
+  if (code >= 61 && code <= 67) return '🌧️ Rain';
+  if (code >= 71 && code <= 77) return '❄️ Snow';
+  if (code >= 80 && code <= 82) return '🌧️ Showers';
+  if (code >= 95) return '⛈️ Thunderstorm';
+  return '🌤️ Mixed weather';
+}
+
+// Get approximate location using the public IP address.
+// If this fails, fall back to the last successful location.
+async function getWeatherLocation() {
+  if (lastKnownLocation) return lastKnownLocation;
+
+  const response = await fetch('https://ipwho.is/');
+
+  if (!response.ok) {
+    throw new Error('Could not detect location');
+  }
+
+  const location = await response.json();
+
+  if (!location.success || !location.latitude || !location.longitude) {
+    throw new Error('Location detection failed');
+  }
+
+  lastKnownLocation = {
+    latitude: location.latitude,
+    longitude: location.longitude,
+    city: location.city || 'your location'
+  };
+
+  return lastKnownLocation;
+}
+
+async function morningWeather(tries = 0, force = false) {
+  const now = new Date();
+  const hour = now.getHours();
+
+  // Send weather only once per day during the morning window.
+  if (
+    !force &&
+    (hour < WEATHER_FROM ||
+      hour >= WEATHER_TO ||
+      weatherDay === now.toDateString())
+  ) {
+    return;
+  }
+
+  try {
+    const location = await getWeatherLocation();
+
+    const url =
+      `https://api.open-meteo.com/v1/forecast?latitude=${location.latitude}` +
+      `&longitude=${location.longitude}` +
+      `&current=temperature_2m,apparent_temperature,weather_code` +
+      `&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max` +
+      `&timezone=auto&forecast_days=1`;
+
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      throw new Error('Weather API error: ' + response.status);
+    }
+
+    const data = await response.json();
+
+    const current = data.current;
+    const daily = data.daily;
+
+    const rain = daily.precipitation_probability_max?.[0] ?? 0;
+
+    let message =
+      `${weatherWord(current.weather_code)} in ${location.city}: ` +
+      `${Math.round(current.temperature_2m)}°C ` +
+      `(feels like ${Math.round(current.apparent_temperature)}°C). ` +
+      `Today: ${Math.round(daily.temperature_2m_min[0])}–` +
+      `${Math.round(daily.temperature_2m_max[0])}°C. ` +
+      `Rain chance: ${rain}%.`;
+
+    if (rain >= 50) {
+      message += ' Take an umbrella! ☂️';
+    }
+
+    weatherDay = now.toDateString();
+    send('weather', message);
+
+  } catch (error) {
+    console.log('Weather update failed:', error.message);
+
+    if (tries < 3) {
+      setTimeout(() => morningWeather(tries + 1, force), 60000);
+    }
+  }
+}
 
 function createWindow() {
   const b = screen.getPrimaryDisplay().bounds;
