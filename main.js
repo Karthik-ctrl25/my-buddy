@@ -11,6 +11,13 @@ const TASKBAR_H = 48;               // height of the Windows taskbar when it pop
 const GITHUB_USER = 'Karthik-ctrl25';
 const STREAK_HOUR = 21;             // streak guard starts checking at 9 pm (local time)
 
+// ================= WEATHER =================
+const WEATHER_FROM = 5;  // Start checking at 5 AM
+const WEATHER_TO = 11;   // Stop checking at 11 AM
+
+let weatherDay = null;
+let lastKnownLocation = null;
+
 let win, tray, lastGreet = 0, musicEnabled = true, tbShown = false;
 let lastCx = null, lastCy = null;
 let streakDoneDay = null, nextStreakCheck = 0;   // streak guard memory
