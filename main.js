@@ -151,7 +151,10 @@ function createWindow() {
   win.setIgnoreMouseEvents(true, { forward: true }); // click-through by default
   win.loadFile('index.html');
   win.once('ready-to-show', () => win.showInactive());
-  win.webContents.on('did-finish-load', () => setTimeout(greet, 3000)); // boot / login greeting
+  win.webContents.on('did-finish-load', () => {
+  setTimeout(greet, 3000);
+  setTimeout(() => morningWeather(), 8000);
+});
   win.webContents.on('console-message', (e, level, message) => console.log('[buddy]', e.message || message));
 }
 
