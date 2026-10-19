@@ -259,6 +259,7 @@ function buildMenu() {
     { label: 'Remind me now', click: () => send('remind') },
     { label: 'Say hi', click: () => send('greet') },
     { label: 'Check GitHub streak now', click: () => send('streak-now') },
+    {label: 'Show weather now',click: () => morningWeather(0, true)},
     { label: 'Dismiss (Ctrl+Alt+B)', click: () => send('dismiss') },
     { label: 'Hide / Show buddy (Ctrl+Alt+H)', click: () => send('hide-toggle') },
     { label: 'Dance when music plays (Ctrl+Alt+M)', type: 'checkbox', checked: musicEnabled, click: toggleMusic },
