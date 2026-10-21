@@ -276,7 +276,16 @@ async function streakTick() {                 // runs every minute
     console.log('streak check failed:', e.message);
   }
 }
-
+function sleepTick() {                        // runs every minute
+  const h = new Date().getHours();
+  if (h < SLEEP_FROM || h >= SLEEP_TO) return;
+  const key = nightKey();
+  if (sleepSkipKey === key) return;           // skipped for tonight
+  if (nightKeyDone !== key) { nightKeyDone = key; nightLevel = 0; nextSleepAt = 0; }
+  if (Date.now() < nextSleepAt) return;
+  nextSleepAt = Date.now() + SLEEP_EVERY_MIN * 60000;
+  send('sleep', nightLevel++);
+}
 // ================= SYSTEM STATS =================
 let prevCpu = os.cpus();
 function cpuPercent() {
