@@ -312,6 +312,8 @@ function buildMenu() {
     { label: 'Remind me now', click: () => send('remind') },
     { label: 'Say hi', click: () => send('greet') },
     { label: 'Open WhatsApp (Ctrl+Alt+W)', click: openWhatsApp },
+    { label: 'Skip sleep reminders tonight', click: () => { sleepSkipKey = nightKey(); } },
+    { label: 'Test sleep reminder', click: () => send('sleep', Math.floor(Math.random() * 6)) },
     { label: 'Check GitHub streak now', click: () => send('streak-now') },
     {label: 'Show weather now',click: () => morningWeather(0, true)},
     { label: 'Dismiss (Ctrl+Alt+B)', click: () => send('dismiss') },
