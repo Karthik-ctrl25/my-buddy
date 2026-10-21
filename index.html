@@ -199,19 +199,15 @@ const SLEEP_MSGS = [
   "SLEEP. NOW. 🚨 I'm not leaving!"
 ];
 function sleepChime(level) {                     // soft bell -> louder, faster alert
-  beepCtx = beepCtx || new AudioContext(); beepCtx.resume();
-  const notes = level < 2 ? [523, 659] : level < 4 ? [523, 659, 784] : [880, 660, 880, 660];
-  const vol = Math.min(0.08 + level * 0.04, 0.35);
-  notes.forEach((f, i) => {
-    const o = beepCtx.createOscillator(), g = beepCtx.createGain();
-    const t0 = beepCtx.currentTime + i * 0.35;
-    o.type = 'sine'; o.frequency.value = f;
-    g.gain.setValueAtTime(0.0001, t0);
-    g.gain.exponentialRampToValueAtTime(vol, t0 + 0.05);
-    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.6);
-    o.connect(g); g.connect(beepCtx.destination);
-    o.start(t0); o.stop(t0 + 0.65);
+  const audio = new Audio('assets/sleep.mp3');
+
+  audio.volume = Math.min(0.3 + level * 0.1, 1);
+
+  audio.play().catch(err => {
+    console.error('Sleep sound failed to play:', err);
   });
+
+  return audio;
 }
 function playAlarm() {
   stopAlarm();
