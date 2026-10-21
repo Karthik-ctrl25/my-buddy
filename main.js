@@ -1,7 +1,9 @@
 const { app, BrowserWindow, screen, session, desktopCapturer, Tray, Menu, nativeImage,
-        ipcMain, powerMonitor, globalShortcut } = require('electron');
+        ipcMain, powerMonitor, globalShortcut, shell } = require('electron');
 const path = require('path');
 const os = require('os');
+const fs = require('fs');
+const { execFile } = require('child_process');
 
 // fixes the "cache Access denied" errors
 app.setPath('userData', path.join(app.getPath('appData'), 'MyBuddy'));
@@ -10,6 +12,41 @@ app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
 const TASKBAR_H = 48;               // height of the Windows taskbar when it pops up (DIP)
 const GITHUB_USER = 'Karthik-ctrl25';
 const STREAK_HOUR = 21;             // streak guard starts checking at 9 pm (local time)
+
+// ================= OPEN WHATSAPP =================
+const WA_URL = 'https://web.whatsapp.com/';
+const WA_EMAIL = 'karthikraikar25@gmail.com';   // Chrome profile signed in with this account
+
+function chromeExe() {
+  const dirs = [process.env.ProgramFiles, process.env['ProgramFiles(x86)'], process.env.LOCALAPPDATA];
+  for (const d of dirs) {
+    if (!d) continue;
+    const f = path.join(d, 'Google', 'Chrome', 'Application', 'chrome.exe');
+    if (fs.existsSync(f)) return f;
+  }
+  return null;
+}
+
+// Finds the Chrome profile folder (Default / Profile 1 / ...) signed in with WA_EMAIL.
+function chromeProfileDir() {
+  try {
+    const ls = JSON.parse(fs.readFileSync(
+      path.join(process.env.LOCALAPPDATA, 'Google', 'Chrome', 'User Data', 'Local State'), 'utf8'));
+    const cache = ls.profile.info_cache;
+    for (const dir in cache) {
+      if ((cache[dir].user_name || '').toLowerCase() === WA_EMAIL) return dir;
+    }
+  } catch (e) { console.log('profile lookup failed:', e.message); }
+  return 'Default';
+}
+
+function openWhatsApp() {
+  const exe = chromeExe();
+  if (!exe) { shell.openExternal(WA_URL); return; }   // Chrome not found: default browser
+  execFile(exe, ['--profile-directory=' + chromeProfileDir(), WA_URL], err => {
+    if (err) console.log('open WhatsApp failed:', err.message);
+  });
+}
 
 // ================= WEATHER =================
 const WEATHER_FROM = 5;  // Start checking at 5 AM
@@ -258,6 +295,7 @@ function buildMenu() {
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Remind me now', click: () => send('remind') },
     { label: 'Say hi', click: () => send('greet') },
+    { label: 'Open WhatsApp (Ctrl+Alt+W)', click: openWhatsApp },
     { label: 'Check GitHub streak now', click: () => send('streak-now') },
     {label: 'Show weather now',click: () => morningWeather(0, true)},
     { label: 'Dismiss (Ctrl+Alt+B)', click: () => send('dismiss') },
@@ -316,7 +354,10 @@ app.whenReady().then(() => {
   reg('Control+Alt+B', () => send('dismiss'));
   reg('Control+Alt+H', () => send('hide-toggle'));
   reg('Control+Alt+M', toggleMusic);
+  reg('Control+Alt+W', openWhatsApp);
 });
 
-app.on('will-quit', () => globalShortcut.unregisterAll());
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
+});
 app.on('window-all-closed', () => app.quit());

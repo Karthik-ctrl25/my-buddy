@@ -2,10 +2,10 @@
   "name": "mybuddy",
   "version": "1.0.0",
   "main": "main.js",
-"scripts": {
-  "start": "electron .",
-  "pack": "electron-packager . MyBuddy --platform=win32 --arch=x64 --out=dist --overwrite"
-},
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-packager . MyBuddy --platform=win32 --arch=x64 --out=dist --overwrite"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",
