@@ -116,7 +116,7 @@ const DANCE = [
   // later: 'dance_wide', 'dance_lunge', 'dance_shoulder', 'dance_kick', 'dance_spin', ...
 ];
 const loaded = new Set(['front', 'back']);
-[...DANCE, 'sit','cup_hold','cup_drink','thumbs_up','run1','run2','think','clock_hold','archer'].forEach(n => {
+[...DANCE, 'sit','cup_hold','cup_drink','thumbs_up','run1','run2','think','clock_hold','archer','sleep_eyes','sleep_laptop','sleep_bed'].forEach(n => {
   const i = new Image(); i.onload = () => loaded.add(n); i.src = `assets/${n}.png`;
 });
 let cur = '';
@@ -189,12 +189,14 @@ function beepOnce(times = 3) {                   // a few short beeps (low batte
   }
 }
 const SLEEP_MSGS = [
-  "It's 12 am Karthik 🌙 Time to sleep!",
-  'Still awake? 😴 DSA will be there tomorrow',
-  'Bro go sleep 😠 Your brain needs rest',
-  'Tomorrow will be tough! Sleep NOW 🛌',
-  "I'm not leaving until you sleep 😤",
-  'SLEEP. NOW. 🚨'
+  "12 AM Karthik 🌙 Laptop off, sleep time!",
+  "Your eyes must be red by now 👀 Close the screen",
+  "Eyes burning? 🔥 That blue light is killing your sleep",
+  "Bro go sleep 😠 Tomorrow's you needs this rest",
+  "You'll be a zombie in class tomorrow 🧟",
+  "Even I'm sleepy 😴 zzz... go to bed!",
+  "Your pillow misses you 🛏️",
+  "SLEEP. NOW. 🚨 I'm not leaving!"
 ];
 function sleepChime(level) {                     // soft bell -> louder, faster alert
   beepCtx = beepCtx || new AudioContext(); beepCtx.resume();
@@ -334,7 +336,15 @@ async function notice(ok, text, pose, ms = 4500) {   // run to the middle, show 
   state = pose; say(text); await w(ms, ok); say(null);
   await moveTo(sitX(), RUN_SPEED, ok);
 }
-
+async function sleepScene(ok, level) {           // eyes burning -> close laptop -> bed
+  await moveTo(W() * 0.5 - AW / 2, RUN_SPEED, ok);
+  sleepChime(level);
+  state = 'sleep_eyes';   say(SLEEP_MSGS[Math.min(level, SLEEP_MSGS.length - 1)]); await w(5000, ok);
+  state = 'sleep_laptop'; say('Close the laptop 💻');   await w(4000, ok);
+  state = 'sleep_bed';    say('Good night 🛏️💤');        await w(5000, ok);
+  say(null);
+  await moveTo(sitX(), RUN_SPEED, ok);
+}
 async function music(ok) {                       // get up, dance, wander, sit again when music stops
   await moveTo(W() * 0.5 - AW / 2, RUN_SPEED, ok);
   state = 'dance';
@@ -418,10 +428,7 @@ window.api.onCmd((name, arg) => {
   else if (name === 'remind') start('remind', 3, remind);
   else if (name === 'streak') start('streak', 2, streak);
   else if (name === 'streak-now') manualStreak();
-    else if (name === 'sleep') {
-    const l = Math.min(arg, SLEEP_MSGS.length - 1);
-    start('sleep', 2, ok => { Audio('assets/sleep.mp3').play();return notice(ok, SLEEP_MSGS[l], l >= 3 ? 'wave' : 'think', 6000); });
-  }
+  else if (name === 'sleep') start('sleep', 2, ok => sleepScene(ok, arg));
   else if (name === 'dismiss') dismissNow();
   else if (name === 'taskbar') tbShown = arg;     // auto-hide taskbar popped up / hid
   else if (name === 'hide-toggle') {
@@ -535,6 +542,9 @@ function animate(now) {
   else if (state === 'think') setImg('think');
   else if (state === 'aim') setImg(loaded.has('archer') ? 'archer' : 'think');   // hover: archer shooting up
   else if (state === 'holdclock') setImg('clock_hold');
+    else if (state === 'sleep_eyes') setImg('sleep_eyes');
+  else if (state === 'sleep_laptop') setImg('sleep_laptop');
+  else if (state === 'sleep_bed') setImg('sleep_bed');
   else setImg('sit');                              // idle: sitting (falls back to front.png)
 
   // ground follows the taskbar (rises when it pops up, sinks when it hides)
