@@ -188,6 +188,29 @@ function beepOnce(times = 3) {                   // a few short beeps (low batte
     o.start(t0); o.stop(t0 + 0.15);
   }
 }
+const SLEEP_MSGS = [
+  "It's 12 am Karthik 🌙 Time to sleep!",
+  'Still awake? 😴 DSA will be there tomorrow',
+  'Bro go sleep 😠 Your brain needs rest',
+  'Tomorrow will be tough! Sleep NOW 🛌',
+  "I'm not leaving until you sleep 😤",
+  'SLEEP. NOW. 🚨'
+];
+function sleepChime(level) {                     // soft bell -> louder, faster alert
+  beepCtx = beepCtx || new AudioContext(); beepCtx.resume();
+  const notes = level < 2 ? [523, 659] : level < 4 ? [523, 659, 784] : [880, 660, 880, 660];
+  const vol = Math.min(0.08 + level * 0.04, 0.35);
+  notes.forEach((f, i) => {
+    const o = beepCtx.createOscillator(), g = beepCtx.createGain();
+    const t0 = beepCtx.currentTime + i * 0.35;
+    o.type = 'sine'; o.frequency.value = f;
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(vol, t0 + 0.05);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.6);
+    o.connect(g); g.connect(beepCtx.destination);
+    o.start(t0); o.stop(t0 + 0.65);
+  });
+}
 function playAlarm() {
   stopAlarm();
   const a = new Audio('assets/alarm.mp3');
@@ -261,7 +284,7 @@ $('iSys').onclick = () => { if (mode === 'idle') openSys(); };
 $('sysClose').onclick = closePanel;
 
 // ================= SCENE STARTER =================
-const ALWAYS = ['remind', 'alarm', 'battery'];    // these may appear even while he is hidden
+const ALWAYS = ['remind', 'alarm', 'battery','sleep'];    // these may appear even while he is hidden
 function start(name, p, fn) {
   if (hidden && !ALWAYS.includes(name)) return false;
   if (mode !== 'idle' && p <= prio) return false;    // only higher priority can interrupt

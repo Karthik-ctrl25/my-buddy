@@ -366,6 +366,7 @@ app.whenReady().then(() => {
   setInterval(sendCursor, 40);
   setInterval(keepOnTop, 300);
   setInterval(streakTick, 60 * 1000);
+  setInterval(sleepTick, 60 * 1000);
 
   powerMonitor.on('resume', () => setTimeout(greet, 2000));        // wake from sleep
   powerMonitor.on('unlock-screen', () => setTimeout(greet, 1500)); // unlock
