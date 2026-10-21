@@ -418,6 +418,10 @@ window.api.onCmd((name, arg) => {
   else if (name === 'remind') start('remind', 3, remind);
   else if (name === 'streak') start('streak', 2, streak);
   else if (name === 'streak-now') manualStreak();
+    else if (name === 'sleep') {
+    const l = Math.min(arg, SLEEP_MSGS.length - 1);
+    start('sleep', 2, ok => { Audio('assets/sleep.mp3').play();return notice(ok, SLEEP_MSGS[l], l >= 3 ? 'wave' : 'think', 6000); });
+  }
   else if (name === 'dismiss') dismissNow();
   else if (name === 'taskbar') tbShown = arg;     // auto-hide taskbar popped up / hid
   else if (name === 'hide-toggle') {
