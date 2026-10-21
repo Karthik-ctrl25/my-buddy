@@ -13,6 +13,13 @@ const TASKBAR_H = 48;               // height of the Windows taskbar when it pop
 const GITHUB_USER = 'Karthik-ctrl25';
 const STREAK_HOUR = 21;             // streak guard starts checking at 9 pm (local time)
 
+// ================= NIGHT WIND-DOWN =================
+const SLEEP_FROM = 0;          // 12 am
+const SLEEP_TO = 5;            // stop at 5 am
+const SLEEP_EVERY_MIN = 10;    // repeat every 10 min
+let nightLevel = 0, nightKeyDone = null, nextSleepAt = 0, sleepSkipKey = null;
+const nightKey = () => new Date(Date.now() - 6 * 3600 * 1000).toDateString();  // same "night" across midnight
+
 // ================= OPEN WHATSAPP =================
 const WA_URL = 'https://web.whatsapp.com/';
 const WA_EMAIL = 'karthikraikar25@gmail.com';   // Chrome profile signed in with this account
